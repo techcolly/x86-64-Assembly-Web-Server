@@ -12,3 +12,4 @@ This is the assembly file I wrote for the "Web Server" challenge in the "Computi
 - A client can request to put a file on the server.
 - If the file does not exist, it will be created.
 - If the request is malformed, the server will return `400 Bad Request` and exit with code 1. Otherwise, the file will be modified/created with the contents of the request and the server will return a `200 OK` to indicate a successful request.
+- A `POST` request cannot be more than 2048 bytes long.
