@@ -13,6 +13,9 @@
     stat_resp: .ascii "HTTP/1.0 200 OK", "\r", "\n", "\r", "\n"
     .equ resp_len, . - stat_resp
 
+    stat_err: .ascii "HTTP/1.0 400 Bad Request", "\r", "\n", "\r", "\n"
+    .equ err_len, . - stat_err
+
     req_get: .ascii "GET "
     .equ rget_len, . - req_get
 
@@ -71,8 +74,8 @@ _start:
     jg parent
 
     fork_error:
-        lea rbx, [rip + exit]
-        jmp rbx # just exit on failure
+        lea rbx, [rip + exit_error]
+        jmp rbx # just exit on failure and indicate an error
     parent:
         mov rax, 3 # close(ACC_SOCK) on the parent
         movzx rdi, BYTE PTR [rbp - ACC_SOCK]
@@ -106,6 +109,7 @@ _start:
             mov rcx, rpost_len
             cld
             repe cmpsb
+            jne exit_error # exit on malformed request
             je .post_handler
             
         .get_handler:
@@ -121,6 +125,8 @@ _start:
                 lea rdi, [rbp - ACCEPT_TO + rget_len]
                 mov rsi, 0
                 syscall
+                cmp rax, 0
+                js exit_error ; exit if file cannot be opened and indicate error
             
             mov DWORD PTR [rbp - GETREQ_OPEN_FD], eax
 
@@ -163,10 +169,12 @@ _start:
             cld
             repne scasb
             mov BYTE PTR [rdi - 1], 0 # location of the place where we need to replace the space with a null terminator for the filename
-
+            mov rcx, ACCEPT_LEN
+            
             .find_end:
                 mov al, 0x0d
                 repne scasb
+                jne exit_error # exit if malformed request
                 cmp DWORD PTR [rdi - 1], 0x0a0d0a0d # \r\n\r\n end of HTTP headers
                 je .open_post
                 jmp .find_end
@@ -208,4 +216,15 @@ _start:
         exit:
             mov rax, 60 # exit(0)
             mov rdi, 0
+            syscall
+
+        exit_error:
+            mov rax, 1 # write(ACC_SOCK, stat_err, err_len)
+            movzx rdi, BYTE PTR [rbp - ACC_SOCK]
+            lea rsi, [rip + stat_err]
+            mov rdx, err_len
+            syscall # send 400 Bad Request to client
+
+            mov rax, 60 # exit(1)
+            mov rdi, 1
             syscall
